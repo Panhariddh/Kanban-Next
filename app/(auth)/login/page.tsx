@@ -46,7 +46,7 @@ export default function LoginPage() {
       }
 
       // Use Next.js router for client-side navigation
-      router.push('/board');
+      router.push('/home');
       router.refresh(); // Optional: refresh server components
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');

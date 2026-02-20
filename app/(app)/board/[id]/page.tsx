@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useState } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 
 // ============== TYPES (UNCHANGED) ==============
 type Task = {
@@ -95,15 +96,17 @@ export default function BoardPage() {
     const [moveTask] = useMutation(MOVE_TASK);
     const [deleteTask] = useMutation<{ deleteTask: boolean }, { id: number }>(DELETE_TASK);
     const [activeId, setActiveId] = useState<number | null>(null);
+    const params = useParams();
+    const boardId = params.id;
 
     const columns = ['TODO', 'IN_PROGRESS', 'DONE'] as const;
 
     // Subscription logic
     useSubscription<TaskUpdatedResponse>(TASK_UPDATED, {
         variables: {
-            boardId: data?.boards?.[0]?.id ? Number(data.boards[0].id) : 0,
+            boardId: boardId ? Number(boardId) : 0,
         },
-        skip: !data || data.boards.length === 0,
+        skip: !data || data.boards.length === 0 || !boardId,
         onData: ({ client, data: subData }) => {
             const updatedTask = subData.data?.taskUpdated;
             if (!updatedTask) return;
@@ -145,7 +148,15 @@ export default function BoardPage() {
         );
     }
 
-    const board = data.boards[0];
+    if (!data || !boardId) {
+    return <p>Loading...</p>;
+    }
+
+    const board = data.boards.find((b) => Number(b.id) === Number(boardId));
+
+    if (!board) {
+        return <p>Board not found</p>;
+    }
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
