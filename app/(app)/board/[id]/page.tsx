@@ -13,13 +13,16 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { Trash2 } from 'lucide-react';
+import { FilePen, Trash2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { Toaster } from 'react-hot-toast';
 
 // ============== TYPES (UNCHANGED) ==============
 type Task = {
     id: number;
     title: string;
     status: string;
+    description?: string;
 };
 
 type Board = {
@@ -32,6 +35,7 @@ type CreateTaskResponse = {
     createTask: {
         id: number;
         title: string;
+        description?: string;
     };
 };
 
@@ -53,6 +57,7 @@ const GET_BOARDS = gql`
         id
         title
         status
+        description 
       }
     }
   }
@@ -73,6 +78,8 @@ const CREATE_TASK = gql`
     createTask(title: $title, boardId: $boardId) {
       id
       title
+      status
+      description
     }
   }
 `;
@@ -89,6 +96,15 @@ const DELETE_TASK = gql`
   }
 `;
 
+const UPDATE_TASK = gql`
+  mutation ($id: Float!, $description: String!) {
+    updateTask(id: $id, description: $description) {
+      id
+      description
+    }
+  }
+`;
+
 // ============== MAIN COMPONENT ==============
 export default function BoardPage() {
     const { data, refetch } = useQuery<GetBoardsResponse>(GET_BOARDS);
@@ -96,6 +112,7 @@ export default function BoardPage() {
     const [createTask] = useMutation<CreateTaskResponse>(CREATE_TASK);
     const [moveTask] = useMutation(MOVE_TASK);
     const [deleteTask] = useMutation<{ deleteTask: boolean }, { id: number }>(DELETE_TASK);
+    const [updateTask] = useMutation(UPDATE_TASK);
     const [activeId, setActiveId] = useState<number | null>(null);
     const params = useParams();
     const boardId = params.id;
@@ -150,7 +167,7 @@ export default function BoardPage() {
     }
 
     if (!data || !boardId) {
-    return <p>Loading...</p>;
+        return <p>Loading...</p>;
     }
 
     const board = data.boards.find((b) => Number(b.id) === Number(boardId));
@@ -195,32 +212,40 @@ export default function BoardPage() {
         setActiveId(null);
     };
 
-    const handleCreateTask = () => {
+    const handleCreateTask = async () => {
         if (!title.trim()) return;
-        createTask({
-            variables: { title, boardId: Number(board.id) },
-            update: (cache, { data }) => {
-                const newTask = data?.createTask;
-                if (!newTask) return;
-                cache.updateQuery(
-                    { query: GET_BOARDS },
-                    (existing: GetBoardsResponse | null) => {
-                        if (!existing) return existing;
-                        return {
-                            boards: existing.boards.map((b) =>
-                                b.id === board.id
-                                    ? {
-                                        ...b,
-                                        tasks: [...b.tasks, { ...newTask, status: 'TODO' }],
-                                    }
-                                    : b
-                            ),
-                        };
-                    }
-                );
-            },
-        });
-        setTitle('');
+
+        try {
+            await createTask({
+                variables: { title, boardId: Number(board.id) },
+                update: (cache, { data }) => {
+                    const newTask = data?.createTask;
+                    if (!newTask) return;
+                    cache.updateQuery(
+                        { query: GET_BOARDS },
+                        (existing: GetBoardsResponse | null) => {
+                            if (!existing) return existing;
+                            return {
+                                boards: existing.boards.map((b) =>
+                                    b.id === board.id
+                                        ? {
+                                            ...b,
+                                            tasks: [...b.tasks, { ...newTask, 
+                                            status: 'TODO',
+                                            description: newTask.description ?? '',  }],
+                                        }
+                                        : b
+                                ),
+                            };
+                        }
+                    );
+                },
+            });
+            toast.success("Task created ✅");
+            setTitle('');
+        } catch (err) {
+            toast.error("Failed to create task ❌");
+        }
     };
 
     return (
@@ -272,6 +297,7 @@ export default function BoardPage() {
                             title={getColumnTitle(col)}
                             tasks={board.tasks.filter((t) => t.status === col)}
                             deleteTask={deleteTask}
+                            updateTask={updateTask}
                         />
                     ))}
                 </div>
@@ -318,11 +344,13 @@ function Column({
     title,
     tasks,
     deleteTask,
+    updateTask,
 }: {
     id: string;
     title: string;
     tasks: Task[];
     deleteTask: any;
+    updateTask: any;
 }) {
     const { setNodeRef, isOver } = useDroppable({ id });
 
@@ -352,7 +380,7 @@ function Column({
             {/* Tasks List */}
             <div style={styles.taskList}>
                 {tasks.map((task) => (
-                    <TaskCard key={task.id} task={task} deleteTask={deleteTask} />
+                    <TaskCard key={task.id} task={task} deleteTask={deleteTask} updateTask={updateTask} />
                 ))}
                 {tasks.length === 0 && (
                     <div style={styles.emptyColumn}>
@@ -365,7 +393,7 @@ function Column({
 }
 
 // ============== TASK CARD COMPONENT ==============
-function TaskCard({ task, deleteTask }: { task: Task; deleteTask: any }) {
+function TaskCard({ task, deleteTask, updateTask }: { task: Task; deleteTask: any; updateTask: any }) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: task.id,
     });
@@ -378,45 +406,88 @@ function TaskCard({ task, deleteTask }: { task: Task; deleteTask: any }) {
 
     return (
         <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
-            <div style={styles.taskContent}>
+            {/* LEFT SIDE */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <span style={styles.taskTitle}>{task.title}</span>
 
-                {/* Delete Button */}
+                <span style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                    {task.description || "No description"}
+                </span>
+            </div>
+
+            {/* RIGHT SIDE ACTIONS */}
+            <div style={{ display: 'flex', gap: 6 }}>
+                
+                {/* EDIT */}
                 <button
                     onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
+                    onClick={async (e) => {
                         e.stopPropagation();
-                        deleteTask({
-                            variables: { id: Number(task.id) },
-                            optimisticResponse: { deleteTask: true },
-                            update: (cache: ApolloCache, { data }: { data?: { deleteTask: boolean } }) => {
-                                if (!data?.deleteTask) return;
-                                cache.updateQuery(
-                                    { query: GET_BOARDS },
-                                    (existing: GetBoardsResponse | null) => {
-                                        if (!existing) return existing;
-                                        return {
-                                            boards: existing.boards.map((board) => ({
-                                                ...board,
-                                                tasks: board.tasks.filter(
-                                                    (t) => Number(t.id) !== Number(task.id)
-                                                ),
-                                            })),
-                                        };
-                                    }
-                                );
-                            },
-                        });
+
+                        const desc = prompt("Edit description:", task.description || "");
+                        if (desc === null) return;
+
+                        try {
+                            await updateTask({
+                                variables: {
+                                    id: Number(task.id),
+                                    description: desc,
+                                },
+                            });
+
+                            toast.success("Updated ✏️");
+                        } catch {
+                            toast.error("Update failed ❌");
+                        }
                     }}
-                    style={styles.deleteButton}
-                    aria-label="Delete task"
+                    style={styles.iconButtonBlue}
+                >
+                    <FilePen size={14} />
+                </button>
+
+                {/* DELETE */}
+                <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={async (e) => {
+                        e.stopPropagation();
+
+                        if (!confirm("Delete this task?")) return;
+
+                        try {
+                            await deleteTask({
+                                variables: { id: Number(task.id) },
+                                optimisticResponse: { deleteTask: true },
+                                update: (cache: ApolloCache, { data }: any) => {
+                                    if (!data?.deleteTask) return;
+
+                                    cache.updateQuery(
+                                        { query: GET_BOARDS },
+                                        (existing: GetBoardsResponse | null) => {
+                                            if (!existing) return existing;
+
+                                            return {
+                                                boards: existing.boards.map((board) => ({
+                                                    ...board,
+                                                    tasks: board.tasks.filter(
+                                                        (t) => Number(t.id) !== Number(task.id)
+                                                    ),
+                                                })),
+                                            };
+                                        }
+                                    );
+                                },
+                            });
+
+                            toast.success("Task deleted 🗑️");
+                        } catch {
+                            toast.error("Delete failed ❌");
+                        }
+                    }}
+                    style={styles.iconButtonRed}
                 >
                     <Trash2 size={14} />
                 </button>
             </div>
-
-            {/* Subtle drag hint */}
-            <div style={styles.dragHandle}>⋮⋮</div>
         </div>
     );
 }
@@ -638,5 +709,32 @@ const styles: Record<string, React.CSSProperties> = {
         color: '#1e293b',
         maxWidth: '250px',
         wordBreak: 'break-word',
+    },
+
+    // Buttons with Icons
+    iconButtonBlue: {
+        background: '#3b82f6',
+        color: 'white',
+        border: 'none',
+        borderRadius: 6,
+        width: 28,
+        height: 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+    },
+
+    iconButtonRed: {
+        background: '#ef4444',
+        color: 'white',
+        border: 'none',
+        borderRadius: 6,
+        width: 28,
+        height: 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
     },
 };
