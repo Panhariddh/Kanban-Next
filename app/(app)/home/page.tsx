@@ -2,6 +2,7 @@
 
 import { gql } from '@apollo/client';
 import { useQuery, useMutation } from '@apollo/client/react';
+import { FilePen, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -9,6 +10,7 @@ import { useState } from 'react';
 type Board = {
     id: number;
     title: string;
+    typename?: string;
 };
 
 type GetBoardsResponse = {
@@ -34,6 +36,15 @@ const CREATE_BOARD = gql`
   }
 `;
 
+const UPDATE_BOARD = gql`
+  mutation ($id: Float!, $title: String!) {
+    updateBoard(id: $id, title: $title) {
+      id
+      title
+    }
+  }
+`;
+
 const DELETE_BOARD = gql`
   mutation ($id: Float!) {
     deleteBoard(id: $id)
@@ -47,7 +58,13 @@ export default function HomePage() {
         { deleteBoard: boolean },
         { id: number }
     >(DELETE_BOARD);
+    const [updateBoard] = useMutation<
+        { updateBoard: Board },
+        { id: number; title: string }
+    >(UPDATE_BOARD);
     const [title, setTitle] = useState('');
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editingTitle, setEditingTitle] = useState('');
     const router = useRouter();
 
     const handleCreate = async () => {
@@ -65,6 +82,9 @@ export default function HomePage() {
     };
 
     const handleDelete = async (id: number) => {
+
+        if (!confirm("Delete this board?")) return;
+
         try {
             await deleteBoard({
                 variables: { id: Number(id) },
@@ -90,6 +110,48 @@ export default function HomePage() {
             });
         } catch (err) {
             console.error('Delete failed', err);
+        }
+    };
+
+    const handleEdit = async (board: Board) => {
+        const newTitle = prompt("Enter new board name:", board.title);
+
+        if (!newTitle || !newTitle.trim()) return;
+
+        try {
+            await updateBoard({
+                variables: {
+                    id: Number(board.id),
+                    title: newTitle,
+                },
+
+                optimisticResponse: {
+                    updateBoard: {
+                        id: board.id,
+                        title: newTitle,
+                        typename: 'Board',
+                    },
+                },
+
+                update: (cache) => {
+                    cache.updateQuery(
+                        { query: GET_BOARDS },
+                        (existing: GetBoardsResponse | null) => {
+                            if (!existing) return existing;
+
+                            return {
+                                boards: existing.boards.map((b) =>
+                                    b.id === board.id
+                                        ? { ...b, title: newTitle }
+                                        : b
+                                ),
+                            };
+                        }
+                    );
+                },
+            });
+        } catch (err) {
+            console.error("Edit failed", err);
         }
     };
 
@@ -154,7 +216,7 @@ export default function HomePage() {
                                     }}
                                     className="absolute top-3 right-3 bg-red-500 text-white text-xs px-2 py-1 rounded hover:bg-red-600"
                                 >
-                                    ✕
+                                    <Trash2 size={14} />
                                 </button>
                                 <div onClick={() => router.push(`/board/${board.id}`)}>
                                     <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
@@ -165,6 +227,15 @@ export default function HomePage() {
                                     <h3 className="text-lg font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
                                         {board.title}
                                     </h3>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleEdit(board);
+                                        }}
+                                        className="absolute top-3 right-12 bg-blue-500 text-white text-xs px-2 py-1 rounded hover:bg-blue-600"
+                                    >
+                                        <FilePen size={14} />
+                                    </button>
                                     <div className="mt-2 flex items-center text-sm text-slate-400">
                                         <span>ID: #{board.id}</span>
                                     </div>

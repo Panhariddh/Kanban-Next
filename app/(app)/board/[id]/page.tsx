@@ -13,6 +13,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
+import { Trash2 } from 'lucide-react';
 
 // ============== TYPES (UNCHANGED) ==============
 type Task = {
@@ -410,7 +411,7 @@ function TaskCard({ task, deleteTask }: { task: Task; deleteTask: any }) {
                     style={styles.deleteButton}
                     aria-label="Delete task"
                 >
-                    ✕
+                    <Trash2 size={14} />
                 </button>
             </div>
 

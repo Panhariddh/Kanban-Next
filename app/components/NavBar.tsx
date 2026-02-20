@@ -43,7 +43,7 @@ export default function Navbar() {
             cursor: 'pointer',
           }}
         >
-          Logout
+          Log out
         </button>
       </div>
     </div>
