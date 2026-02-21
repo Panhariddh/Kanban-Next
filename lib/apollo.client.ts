@@ -11,7 +11,7 @@ import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 
 const httpLink = new HttpLink({
-  uri: 'http://localhost:3000/graphql',
+  uri: process.env.NEXT_PUBLIC_API_URL + '/graphql',
   credentials: 'include', // IMPORTANT for cookies
 });
 
