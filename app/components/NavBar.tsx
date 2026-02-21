@@ -1,10 +1,12 @@
 'use client';
 
+import { useApolloClient } from '@apollo/client/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export default function Navbar() {
   const router = useRouter();
+  const client = useApolloClient();
 
   const handleLogout = async () => {
     await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/logout`, {
@@ -12,6 +14,7 @@ export default function Navbar() {
       credentials: 'include',
     });
 
+    await client.clearStore();
     router.replace('/login');
     router.refresh();
   };
